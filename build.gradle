@@ -1,0 +1,58 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id "com.jfrog.bintray" version "1.7.3" apply false
+}
+
+version = '0.2.2'
+
+targetCompatibility = '1.8'
+sourceCompatibility = '1.8'
+
+ext.slf4jVersion = '1.7.25'
+ext.kafkaVersion = '1.1.0'
+ext.confluentVersion = '4.1.0'
+
+// In this section you declare where to find the dependencies of your project
+repositories {
+    jcenter()
+    maven { url 'http://packages.confluent.io/maven/' }
+    maven { url 'http://dl.bintray.com/typesafe/maven-releases' }
+}
+
+// In this section you declare the dependencies for your production and test code
+dependencies {
+    // The production code uses the SLF4J logging API at compile time
+    compileOnly group: 'org.slf4j', name:'slf4j-api', version: slf4jVersion
+
+    // to implement producers and consumers
+    compileOnly group: 'org.apache.kafka', name: 'connect-api', version: kafkaVersion
+    compileOnly group: 'io.confluent', name: 'kafka-avro-serializer', version: confluentVersion
+
+    compileOnly group: 'org.apache.kafka', name: 'kafka_2.11', version: kafkaVersion
+
+}
+
+jar {
+    manifest {
+        attributes 'Implementation-Title': 'RADAR-CNS CSVFile connector',
+                'Implementation-Version': version
+    }
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '4.4'
+}
+
+if (!hasProperty('profile')) {
+    ext.profile = 'dev'
+}
+
+apply from: "gradle/profile.${profile}.gradle"
+
+task copyDependencies(type: Copy) {
+    from configurations.runtimeClasspath.files
+    into "${buildDir}/third-party/"
+}
+
+assemble.dependsOn copyDependencies
