@@ -211,7 +211,9 @@ public class CsvFileSinkTask extends SinkTask {
     }    
     private void closeOutFile(OutFile of) {
 	try {
+	    of.writer.flush();
 	    of.writer.close();
+	    log.debug("closed {}", of.path);
 	} catch (Exception e) {
 	    log.error("Closing {}: {}", of.path, e);
 	}
