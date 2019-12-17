@@ -135,7 +135,7 @@ public class CsvFileSinkTask extends SinkTask {
 		File path = getPath(parent, time);
  		OutFile of = null;
 		synchronized (outFiles) {
-		    of = outFiles.get(path);
+		    of = outFiles.get(parent);
 		    if (of != null && of.path != path) {
 		 	log.debug("close {}, open {}", of.path, path);
 			closeOutFile(of);
