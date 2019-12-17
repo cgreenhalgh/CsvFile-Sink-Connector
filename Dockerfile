@@ -38,8 +38,7 @@ LABEL description="Kafka CSV File Sink Connector"
 
 ENV CONNECT_PLUGIN_PATH /usr/share/java/kafka-connect/plugins
 
-# No dependencies (for now, anyway!)
-#COPY --from=builder /code/build/third-party/*.jar ${CONNECT_PLUGIN_PATH}/kafka-connect-csvfile-sink/
+COPY --from=builder /code/build/third-party/*.jar ${CONNECT_PLUGIN_PATH}/kafka-connect-csvfile-sink/
 COPY --from=builder /code/build/libs/*.jar ${CONNECT_PLUGIN_PATH}/kafka-connect-csvfile-sink/
 
 COPY ./src/main/docker/kafka-wait /usr/bin/kafka-wait
@@ -48,3 +47,6 @@ COPY ./src/main/docker/kafka-wait /usr/bin/kafka-wait
 COPY ./src/main/docker/launch /etc/confluent/docker/launch
 # and modified configure (for standalone)
 COPY ./src/main/docker/configure /etc/confluent/docker/configure
+
+# default output dir
+RUN mkdir -p /var/csvout

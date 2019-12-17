@@ -18,6 +18,7 @@
 package org.radarcns.connect.csvfile;
 
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigValue;
@@ -46,10 +47,12 @@ import static org.apache.kafka.common.config.ConfigDef.NO_DEFAULT_VALUE;
  */
 public class CsvFileSinkConnector extends SinkConnector {
     private static final Logger logger = LoggerFactory.getLogger(CsvFileSinkConnector.class);
-
+    public static final String DIRECTORY_CONFIG = "directory";
+    public static final String DIRECTORY_DEFAULT = "/tmp";
     static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(TOPICS_CONFIG, Type.LIST, NO_DEFAULT_VALUE, HIGH,
-                "List of topics to be streamed.");
+                "List of topics to be streamed.")
+	    .define(DIRECTORY_CONFIG, Type.STRING, DIRECTORY_DEFAULT, Importance.HIGH, "Destination directory (default /tmp)");
     private Map<String, String> connectorConfig;
 
     @Override
