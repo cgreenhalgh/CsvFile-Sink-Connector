@@ -1,8 +1,17 @@
 # Kafka CSV File Sink Connector
 
 The CSVFile-Sink-Connector is a Kafka-Connector for testing and development (only) which will dump data from kafka topics straight to CSV files, in a way that is (hopefully) compatible with the CSV files that RADAR generates from the "real" HFDS files.
- 
-Currently, it is a work in progress.
+
+i.e.
+- each project becomes a top-level directory (name = projectId)
+- each user becomes a sub-directory (name = userId)
+- each topic becomes a sub-directory of that (name = topic), which is usually a single data source
+- a CSV file is written for each hour, named "YYYYMMDD_HH.csv". The file is comma-separated with a header (the dotted names of the fields).
+- Base64 encoded values (e.g. audio) are written out to separate files with a "file:" reference in the CSV ("YYYYMMDD_HH_MMSS_SSS_HEADER.MIMETYPE")
+
+Currently, it seems to work, at least for small tests (limted numbers of users/sources).
+
+Note, it requires that the topic key has fields projectId, userId and time (as in RADAR), so it won't work with arbitrary test data.
 
 ## Installation
 
@@ -51,6 +60,7 @@ Modify [sink.properties](sink.properties) file according your environment. The f
 </tr>
 <tr>
 <td>topics</td><td>List of topics to be streamed.</td><td>list</td><td></td><td></td><td>high</td></tr>
+<td>directory</td><td>Output directory to write files to.</td><td>path</td><td></td><td></td><td>high</td></tr>
 </tbody></table>
 
 - A sample configuration may look as below.
@@ -64,7 +74,9 @@ Modify [sink.properties](sink.properties) file according your environment. The f
     tasks.max=1
     
     # Topics that will be consumed
-    topics=avrotest
+    topics=questionnaire_esm
+    # output directory
+    directory=/tmp
     ```
     
 - Run the CsvFile-Sink-Connector in 
@@ -78,19 +90,7 @@ Modify [sink.properties](sink.properties) file according your environment. The f
       ```shell
       connect-distributed /patht/cluster.properties ./sink.properties
       ```
-- Stream sample data to configured `topics` in `sink.properties`. You may use, [rest-proxy](http://docs.confluent.io/4.0.0/kafka-rest/docs/intro.html#produce-and-consume-avro-messages) to do this easily.
-
-    ```shell
-    curl -X POST -H "Content-Type: application/vnd.kafka.avro.v2+json" \
-          -H "Accept: application/vnd.kafka.v2+json" \
-          --data '{"value_schema": "{\"type\": \"record\", \"name\": \"User\", \"fields\": [{\"name\": \"name\", \"type\": \"string\"}]}", "records": [{"value": {"name": "testUser"}}]}' \
-          "http://localhost:8082/topics/avrotest"
-          
-    
-    # You should get the following response:
-      {"offsets":[{"partition":0,"offset":0,"error_code":null,"error":null}],"key_schema_id":null,"value_schema_id":21}
-
-    ```  
+- Stream sample data to configured `topics` in `sink.properties`. Note that the record key must be RADAR-style, i.e. with projectId, userId and time. 
 - Hopefully the data will appear somewhere in the filesystem :-)
 - To stop your connector press `CTRL-C`
 

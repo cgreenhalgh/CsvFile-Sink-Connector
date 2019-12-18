@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.FileInputStream;
@@ -54,6 +55,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.TimeZone;
 
 /**
@@ -126,17 +129,17 @@ public class CsvFileSinkTask extends SinkTask {
 		Double time = value.getFloat64(TIME);
 		// or timeCompleted (active)
 		Double timeReceived = value.schema().field(TIME_RECEIVED)!=null ? value.getFloat64(TIME_RECEIVED) : null;
-		log.info("{}.{}: project {} user {} source {} at time {} received {} : {}",
+		log.debug("{}.{}: project {} user {} source {} at time {} received {} : {}",
 				partition, record.kafkaOffset(),
 				projectId, userId, sourceId,
-				time, timeReceived, value);
+				time, timeReceived, (value.toString()).substring(0,30)+"...");
 		
 		File parent = getParent(projectId, userId, record.topic());
 		File path = getPath(parent, time);
  		OutFile of = null;
 		synchronized (outFiles) {
 		    of = outFiles.get(parent);
-		    if (of != null && of.path != path) {
+		    if (of != null && ! of.path.equals( path ) ) {
 		 	log.debug("close {}, open {}", of.path, path);
 			closeOutFile(of);
 			of = null;
@@ -148,7 +151,7 @@ public class CsvFileSinkTask extends SinkTask {
     		    }
 		}
 		synchronized (of) {
-		    writeRecord(of, key, value);
+		    writeRecord(of, key, value, time);
 		}
 	    } catch (Exception e) {
 		log.error("processing record {}.{}: {} -> {}: {}",
@@ -228,7 +231,7 @@ public class CsvFileSinkTask extends SinkTask {
 		CSVReader reader = new CSVReader(new BufferedReader(new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8)));
 		String [] csvheaders = reader.readNext();
 		if ( csvheaders!= null && csvheaders.length >=5 ) {
-		    log.debug("Read existing header from {}: {}", path, csvheaders);
+		    log.debug("Read existing header from {}", path);
 		    headers = Arrays.asList(csvheaders);
 		    needsHeader = false;
 		} else {
@@ -241,7 +244,6 @@ public class CsvFileSinkTask extends SinkTask {
 	}
 	CSVWriter writer = null;
 	if (needsHeader) {
-	     // TODO	
 	     writer = new CSVWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(path), StandardCharsets.UTF_8)));
 	     headers = writeHeader(writer, key, value);
 	} else {
@@ -290,7 +292,80 @@ public class CsvFileSinkTask extends SinkTask {
 	    headers.add(prefix);
 	}
     }
-    private void writeRecord(OutFile of, Struct key, Struct value) {
-	// TODO
+    private void writeRecord(OutFile of, Struct key, Struct value, double time) {
+	List<String> values = new LinkedList<String>();
+	addValues(values, key, key.schema(), "key", of, time);
+	addValues(values, value, value.schema(), "value", of, time);
+	of.writer.writeNext(values.toArray(new String[values.size()]));
+    }
+    private void addValues(List<String> values, Object value, Schema schema, String prefix, OutFile of, double time) {
+	 if (value==null) {
+	    values.add("");
+	    return;
+	}
+    	if (value instanceof Struct) {
+	    Struct struct = (Struct)value;
+	    for (Field field : struct.schema().fields()) {
+		addValues(values, struct.get(field), field.schema(), prefix+"."+field.name(), of, time);
+	    }
+	} else if (value instanceof List<?>) {
+    	    List<Object> list = (List<Object>)value;
+	    int ix = 0;
+	    for (Object el : list) {
+		addValues(values, el, schema.valueSchema(), prefix+"."+ix, of, time);
+	    	ix++;
+	    }
+	} else if (value instanceof Map) {
+    	    Map<?,?> map = (Map)value;
+	    Map<String,Object> stringMap = new HashMap<String,Object>();
+            for(Map.Entry<?,?> entry : map.entrySet()) {
+		stringMap.put(entry.getKey().toString(), entry.getValue());
+	    }
+	    List<String> sortedKeys = new ArrayList<>(stringMap.keySet());
+	    Collections.sort(sortedKeys);
+	    for(String key : sortedKeys) {
+	        addValues(values, stringMap.get(key), schema.valueSchema(), prefix+"."+key, of, time);
+	    }
+	} else if (value instanceof byte[]) {
+	    // TODO
+	    byte bytes[] = (byte[])value;
+	    values.add("byte["+bytes.length+"]");
+	} else if (value instanceof String) {
+	    String s = (String)value;
+	    // data encoded "data:audio/mpeg;base64,
+	    if (s.startsWith("data:")) {
+		try {
+		    String res = writeDataUrl(of.parent, s, prefix, time);
+		    values.add(res);
+		} catch (Exception e) {
+		    log.error("Error writing data URL {}...: {}", s.substring(0,30), e);
+		    values.add(s);
+		}
+    	    } else {
+		values.add(s);
+	    }
+	} else {
+    	    values.add(value.toString());
+	}
+    }
+    private String writeDataUrl(File parent, String url, String prefix, double time) throws IOException {
+        Pattern p = Pattern.compile("^data:([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)(;base64)?,"); 
+	Matcher m = p.matcher(url);
+        if (m.find() && m.group(3)!=null && m.group(3).length()>0) {
+            SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS");
+            format.setTimeZone(TimeZone.getTimeZone("UTC"));
+            // times are seconds
+	    String filename = format.format(new Date((long)(1000*time)))+"_"+prefix.replace(".","-")+"_"+m.group(1)+"."+m.group(2);
+	    File file = new File(parent, filename);
+	    Base64.Decoder decoder = Base64.getDecoder();
+	    byte data[] = decoder.decode(url.substring(m.group(0).length()));
+	    log.info("Export base64 value to {}", file);
+	    FileOutputStream os = new FileOutputStream(file);
+	    os.write(data);
+	    os.close();
+	    return "file:"+filename;
+	}    
+	log.warn("Unhandled data url: {}...", url.substring(0,50));
+	return url;
     }
 }
